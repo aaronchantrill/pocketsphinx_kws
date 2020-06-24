@@ -1,0 +1,10 @@
+[Plugin]
+Name = Pocketsphinx_KWS
+Version = 0.0.1
+License = MIT
+URL = https://github.com/aaronchantrill/pocketsphinx_kws.git
+Description = Allows Naomi to use pocketsphinx keyword spotting mode for passive listening
+
+[Author]
+Name = Aaron Chantrill
+URL = https://github.com/aaronchantrill
