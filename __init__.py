@@ -1,13 +1,42 @@
 # -*- coding: utf-8 -*-
 import os.path
 import re
-import tempfile
 from collections import OrderedDict
+from naomi import paths
 from naomi import plugin
-from naomi import pluginstore
 from naomi import profile
+from naomi import run_command
 from . import sphinxvocab
-from pocketsphinx import Pocketsphinx
+try:
+    try:
+        from pocketsphinx import pocketsphinx
+    except ValueError:
+        # Fixes a quirky bug when first import doesn't work.
+        # See http://sourceforge.net/p/cmusphinx/bugs/284/ for details.
+        from pocketsphinx import pocketsphinx
+    pocketsphinx_available = True
+    # Why do we have to import sphinxbase.sphinxbase.*?
+    # otherwise, when we create pocketsphinx.Decoder.default_config()
+    # we get the wrong object for some reason.
+    from sphinxbase import sphinxbase
+except ImportError:
+    pocketsphinx = None
+    pocketsphinx_available = False
+
+
+# AaronC - This searches some standard places (/bin, /usr/bin, /usr/local/bin)
+# for a program name.
+# This could be updated to search the PATH, and also verify that execute
+# permissions are set, but for right now this is a quick and dirty
+# placeholder.
+def check_program_exists(program):
+    standardlocations = ['/usr/local/bin', '/usr/bin', '/bin']
+    response = False
+    for location in standardlocations:
+        if(os.path.isfile(os.path.join(location, program))):
+            response = True
+    return response
+
 
 # The STT plugin converts an audio clip into a text transcription.
 # When it is instantiated, it receives a name and a list of likely
@@ -34,20 +63,14 @@ class PocketsphinxKWSPlugin(plugin.STTPlugin):
         plugin.STTPlugin.__init__(self, *args, **kwargs)
 
         self._vocabulary_name = "keywords"
-        keyword = profile.get(['keyword'],['Naomi'])
+        keyword = profile.get(['keyword'], ['Naomi'])
         if isinstance(keyword, str):
             keyword = [keyword]
-        self._vocabulary_phrases = keyword
+        self._keywords = keyword
         self._logger.info(
             "Adding vocabulary {} containing phrases {}".format(
                 self._vocabulary_name,
-                self._vocabulary_phrases
-            )
-        )
-        print(
-            "Adding vocabulary {} containing phrases {}".format(
-                self._vocabulary_name,
-                self._vocabulary_phrases
+                self._keywords
             )
         )
 
@@ -55,7 +78,6 @@ class PocketsphinxKWSPlugin(plugin.STTPlugin):
             sphinxvocab.compile_vocabulary
         )
 
-        lm_path = sphinxvocab.get_languagemodel_path(vocabulary_path)
         dict_path = sphinxvocab.get_dictionary_path(vocabulary_path)
         hmm_dir = profile.get(['pocketsphinx', 'hmm_dir'])
         # Perform some checks on the hmm_dir so that we can display more
@@ -89,12 +111,16 @@ class PocketsphinxKWSPlugin(plugin.STTPlugin):
                 ]).format(hmm_dir, ', '.join(missing_hmm_files))
             )
         # Pocketsphinx v5
-        self._ps = Pocketsphinx(
-            hmm=hmm_dir,
-            lm=lm_path,
-            dict=dict_path
-        )
-        self._logmath = self._ps.get_logmath()
+        config = pocketsphinx.Decoder.default_config()
+        config.set_string('-hmm', hmm_dir)
+        config.set_string('-keyphrase', keyword[0])
+        threshold = profile.get(['pocketsphinx_kws', 'threshold'], 1)
+        if(threshold < 0):
+            config.set_float('-kws_threshold', eval("1e-{}".format(-threshold)))
+        else:
+            config.set_float('-kws_threshold', eval("1e+{}".format(threshold)))
+        config.set_string('-dict', dict_path)
+        self._ps = pocketsphinx.Decoder(config)
 
     # Your plugin will probably rely on some profile settings:
     def settings(self):
@@ -214,7 +240,7 @@ class PocketsphinxKWSPlugin(plugin.STTPlugin):
                 hmm_dir,
                 "cmudict.formatted.dict"
             )
-            if(not check_pocketsphinx_model(hmm_dir)):
+            if(not sphinxbase.check_pocketsphinx_model(hmm_dir)):
                 # Check and see if we already have a copy of the standard
                 # language model
                 print("Downloading and installing the {} pocketsphinx language model".format(language))
@@ -226,8 +252,8 @@ class PocketsphinxKWSPlugin(plugin.STTPlugin):
                     'https://github.com/NaomiProject/CMUSphinx_standard_language_models.git',
                     hmm_dir
                 ]
-                completedprocess = run_command(cmd)
-                self._logger.info(process_completedprocess(completedprocess))
+                completedprocess = run_command.run_command(cmd)
+                self._logger.info(run_command.process_completedprocess(completedprocess))
             if(not os.path.isfile(formatteddict_path)):
                 print("Formatting the g2p dictionary")
                 with open(os.path.join(standard_dir, "cmudict.dict"), "r") as in_file:
@@ -251,8 +277,8 @@ class PocketsphinxKWSPlugin(plugin.STTPlugin):
                     "--seq2_del",
                     "--dir_prefix", os.path.join(hmm_dir, "train")
                 ]
-                completedprocess = run_command(cmd)
-                self._logger.info(process_completedprocess(completedprocess))
+                completedprocess = run_command.run_command(cmd)
+                self._logger.info(run_command.process_completedprocess(completedprocess))
 
         phonetisaurus_executable = profile.get_profile_var(
             ['pocketsphinx', 'phonetisaurus_executable']
@@ -292,6 +318,13 @@ class PocketsphinxKWSPlugin(plugin.STTPlugin):
                         'default': phonetisaurus_executable
                     }
                 ),
+                (
+                    ('pocketsphinx_kws', 'threshold'), {
+                        'title': _('Pocketsphinx keyword search threshold'),
+                        'description': _("The higher the threshold, the less sensitive it becomes"),
+                        'default': 1
+                    }
+                )
             ]
         )
 
@@ -305,47 +338,14 @@ class PocketsphinxKWSPlugin(plugin.STTPlugin):
         Arguments:
             fp -- a file object containing audio data
         """
-        self._ps.decode(
-            audio_file=fp.name,
-            buffer_size=2048,
-            no_search=False,
-            full_utt=False
-        )
-        segments = self._ps.segments(detailed=True)
-        print(
-            "Detailed segments (word, score, start, end): ",
-            *segments,
-            sep='\n\t'
-        )
-        best_keyword = None
-        best_prob = -100000
-        for word,prob,start,end in segments:
-            if word in self._vocabulary_phrases:
-                if prob > best_prob:
-                    best_prob = prob
-                    best_keyword = word
-        if(best_keyword):
-            print(
-                "Detected keyword: {} probability: {} confidence: {}".format(
-                    best_keyword,
-                    best_prob,
-                    self._logmath.exp(best_prob)
-                )
-            )
-        print(
-            "Best 10 hypothesis: ",
-            *self._ps.best(count=10),
-            sep='\n\t'
-        )
-        print(
-            "Best hypothesis: {} model score: {} confidence: {}".format(
-                self._ps.hypothesis(),
-                self._ps.score(),
-                self._ps.confidence()
-            )
-        )
-        if(best_prob > -10):
-            result = best_keyword
-        transcribed = [result] if result != '' else []
-        self._logger.info('Transcribed: %r', transcribed)
+        transcribed = []
+        fp.seek(44)
+        audio_data = fp.read()
+        self._ps.start_utt()
+        self._ps.process_raw(audio_data, False, True)
+        self._ps.end_utt()
+        for s in self._ps.seg():
+            if(s.word in self._keywords):
+                transcribed = transcribed.append(s.word)
+                break
         return transcribed
