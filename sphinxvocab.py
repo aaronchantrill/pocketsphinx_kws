@@ -31,6 +31,14 @@ def get_dictionary_path(path):
     return os.path.join(path, 'dictionary')
 
 
+def get_thresholds_path(path):
+    """
+    Returns:
+        The path to the pocketsphinx_kws keywords file as string
+    """
+    return os.path.join(path, 'kws.thresholds')
+
+
 def compile_vocabulary(directory, phrases):
     """
     Compiles the vocabulary to the Pocketsphinx format by creating a
