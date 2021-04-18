@@ -67,7 +67,8 @@ class PocketsphinxKWSPlugin(plugin.STTPlugin):
         keywords = profile.get(['keyword'], ['Naomi'])
         if isinstance(keywords, str):
             keywords = [keywords]
-        self._vocabulary_phrases = [keyword.upper() for keyword in keywords]
+        keywords = [keyword.upper() for keyword in keywords]
+        self._vocabulary_phrases = keywords
         self._logger.info(
             "Adding vocabulary {} containing phrases {}".format(
                 self._vocabulary_name,
@@ -82,7 +83,18 @@ class PocketsphinxKWSPlugin(plugin.STTPlugin):
         dict_path = sphinxvocab.get_dictionary_path(vocabulary_path)
         lm_path = sphinxvocab.get_languagemodel_path(vocabulary_path)
         thresholds_path = sphinxvocab.get_thresholds_path(vocabulary_path)
-        
+        msg = " ".join([
+            "Creating thresholds file '{}'",
+            "See README.md for more information."
+        ]).format(thresholds_path)
+        print(msg)
+        with open(thresholds_path, 'w') as f:
+            for keyword in keywords:
+                threshold = profile.get(['Pocketsphinx_KWS', 'thresholds', keyword], 25)
+                if(threshold < 0):
+                    f.write("{}\t/1e{}/\n".format(keyword, threshold))
+                else:
+                    f.write("{}\t/1e+{}/\n".format(keyword, threshold))
         hmm_dir = profile.get(['pocketsphinx', 'hmm_dir'])
         # Perform some checks on the hmm_dir so that we can display more
         # meaningful error messages if neccessary
