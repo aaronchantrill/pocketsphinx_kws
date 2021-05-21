@@ -49,6 +49,13 @@ MAGICVOICE  /1e+20/
 ```
 
 If you have defined thresholds in your profile, they will be used when
-creating the thresholds file.
+creating the thresholds file. If any of your wake words are being activated
+accidentally too often, try increasing the threshold. If Naomi becomes too
+difficult to activate, try decreasing the threshold. I am working on a
+trainer called Pocketsphinx_KWS_Trainer. When it is available, you can use
+the recordings and verified transcripts to help select the best thresholds.
+
+This also shares the "sphinx" acoustic model, so using the "Adapt Pocketsphinx"
+STT Trainer plugin is highly recommended for training Naomi to your voice.
 
 <EditPageLink/>

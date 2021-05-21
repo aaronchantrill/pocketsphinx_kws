@@ -71,7 +71,6 @@ def execute(executable, fst_model, input, is_file=False, nbest=None):
             # It is important to raise this error so we can try lower() in sphinxvocab.py
             if(len(RE_ISYMNOTFOUND.findall(nextline)) > 0):
                 logger.error('%s - Input symbol not found' % nextline)
-                proc.kill()
                 raise ValueError('Input symbol not found')
         stdoutdata_byte, stderrdata_byte = proc.communicate()
         stdoutdata = stdoutdata_byte.decode("utf-8")
@@ -156,7 +155,6 @@ class PhonetisaurusG2P(object):
         )
 
     def _translate_words(self, words):
-        self._logger.debug("enter _translate_words")
         with tempfile.NamedTemporaryFile(suffix='.g2p', delete=False) as f:
             # The 'delete=False' kwarg is kind of a hack, but Phonetisaurus
             # won't work if we remove it, because it seems that I can't open
