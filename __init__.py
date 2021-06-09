@@ -90,7 +90,7 @@ class PocketsphinxKWSPlugin(plugin.STTPlugin):
         print(msg)
         with open(thresholds_path, 'w') as f:
             for keyword in keywords:
-                threshold = profile.get(['Pocketsphinx_KWS', 'thresholds', keyword], 25)
+                threshold = profile.get(['Pocketsphinx_KWS', 'thresholds', keyword], 250)
                 if(threshold < 0):
                     f.write("{}\t/1e{}/\n".format(keyword, threshold))
                 else:
