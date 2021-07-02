@@ -35,8 +35,8 @@ passive_stt:
   engine: Pocketsphinx_KWS
 Pocketsphinx_KWS:
     thresholds:
-        NAOMI: 25
-        MAGICVOICE: 20
+        NAOMI: 80
+        MAGICVOICE: 75
 ```
 
 When you use this plugin, it will automatically create a vocabulary
@@ -44,14 +44,15 @@ including a thresholds file called kws.thresholds. The thresholds file has a
 format like:
 
 ```
-NAOMI   /1e+25/
-MAGICVOICE  /1e+20/
+NAOMI   /1e+80/
+MAGICVOICE  /1e+75/
 ```
 
 If you have defined thresholds in your profile, they will be used when
 creating the thresholds file. If any of your wake words are being activated
 accidentally too often, try increasing the threshold. If Naomi becomes too
-difficult to activate, try decreasing the threshold. I am working on a
+difficult to activate, try decreasing the threshold. The range of valid
+threshold levels is from negative eighty to eighty. I am working on a
 trainer called Pocketsphinx_KWS_Trainer. When it is available, you can use
 the recordings and verified transcripts to help select the best thresholds.
 
