@@ -4,7 +4,6 @@ label: Pocketsphinx_KWS
 title: Pocketsphinx_KWS - Speech to Text
 type: stts
 description: "Allows Naomi to use pocketsphinx keyword spotting mode for passive listening"
-logo: images/plugins/
 source: https://github.com/aaronchantrill/pocketsphinx_kws.gitblob/master/readme.md
 meta:
   - property: og:title
@@ -14,8 +13,6 @@ meta:
 ---
 
 # Pocketsphinx_KWS - Speech to Text
-
-<PluginLogo/>
 
 This plugin uses thresholds to listen for specific words. It is primarily meant
 to be used to listen for keywords or wakewords, although if you have an
