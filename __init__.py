@@ -9,6 +9,55 @@ from naomi import profile
 from naomi import run_command
 from . import sphinxvocab
 try:
+    from . import sphinxvocab
+    from .g2p import PhonetisaurusG2P
+except ModuleNotFoundError as e:
+    # Try to install phonetisaurus from pypi
+    cmd = [
+        'pip', 'install', 'phonetisaurus'
+    ]
+    completedprocess = run_command(cmd)
+    if completedprocess.returncode != 0:
+        # check what architecture we are on
+        architecture = platform.machine()
+        phonetisaurus_url = ""
+        if architecture == "x86_64":
+            wheel = "phonetisaurus-0.3.0-py3-none-manylinux1_x86_64.whl"
+        elif architecture == "arm6l":
+            wheel = "phonetisaurus-0.3.0-py3-none-linux_armv6l.whl"
+        elif architecture == "arm7l":
+            wheel = "phonetisaurus-0.3.0-py3-none-linux_armv7l.whl"
+        elif architecture == "aarch64":
+            wheel = "phonetisaurus-0.3.0-py3-none-linux_aarch64.whl"
+        else:
+            # Here we should probably build the package from source
+            raise(f"Architecture {architecture} is not supported at this time")
+        phonetisaurus_url = f"https://github.com/rhasspy/phonetisaurus-pypi/releases/download/v0.3.0/{wheel}"
+        phonetisaurus_path = paths.sub('sources', wheel)
+        cmd = [
+            'curl', '-L', '-o', phonetisaurus_path, phonetisaurus_url
+        ]
+        completedprocess = run_command(cmd)
+        if completedprocess.returncode != 0:
+            raise Exception("Unable to download file from {phonetisaurus_url}")
+        else:
+            # use pip to install the file
+            cmd = [
+                'pip',
+                'install',
+                phonetisaurus_path
+            ]
+            completedprocess = run_command(cmd)
+            if completedprocess.returncode == 0:
+                # Check if phonetisaurus is intalled
+                if importlib.util.find_spec("phonetisaurus"):
+                    from . import sphinxvocab
+                    from .g2p import PhonetisaurusG2P
+                else:
+                    raise Exception("Phonetisaurus install failed")
+            else:
+                raise Exception("Phonetisaurus install failed")
+try:
     try:
         from pocketsphinx import pocketsphinx
     except ValueError:
@@ -16,10 +65,6 @@ try:
         # See http://sourceforge.net/p/cmusphinx/bugs/284/ for details.
         from pocketsphinx import pocketsphinx
     pocketsphinx_available = True
-    # Why do we have to import sphinxbase.sphinxbase.*?
-    # otherwise, when we create pocketsphinx.Decoder.default_config()
-    # we get the wrong object for some reason.
-    from sphinxbase import sphinxbase
 except ImportError:
     pocketsphinx = None
     pocketsphinx_available = False
@@ -67,7 +112,7 @@ class PocketsphinxKWSPlugin(plugin.STTPlugin):
         keywords = profile.get(['keyword'], ['Naomi'])
         if isinstance(keywords, str):
             keywords = [keywords]
-        keywords = [keyword.upper() for keyword in keywords]
+        keywords = [keyword.lower() for keyword in keywords]
         self._vocabulary_phrases = keywords
         self._logger.info(
             "Adding vocabulary {} containing phrases {}".format(
@@ -81,7 +126,6 @@ class PocketsphinxKWSPlugin(plugin.STTPlugin):
         )
 
         dict_path = sphinxvocab.get_dictionary_path(vocabulary_path)
-        lm_path = sphinxvocab.get_languagemodel_path(vocabulary_path)
         thresholds_path = sphinxvocab.get_thresholds_path(vocabulary_path)
         msg = " ".join([
             "Creating thresholds file '{}'",
@@ -90,11 +134,11 @@ class PocketsphinxKWSPlugin(plugin.STTPlugin):
         print(msg)
         with open(thresholds_path, 'w') as f:
             for keyword in keywords:
-                threshold = profile.get(['Pocketsphinx_KWS', 'thresholds', keyword], 80)
+                threshold = profile.get(['Pocketsphinx_KWS', 'thresholds', keyword], 1)
                 if(threshold < 0):
                     f.write("{}\t/1e{}/\n".format(keyword, threshold))
                 else:
-                    f.write("{}\t/1e+{}/\n".format(keyword, threshold))
+                    f.write("{}\t/1e-{}/\n".format(keyword, threshold))
         hmm_dir = profile.get(['pocketsphinx', 'hmm_dir'])
         # Perform some checks on the hmm_dir so that we can display more
         # meaningful error messages if neccessary
@@ -133,14 +177,14 @@ class PocketsphinxKWSPlugin(plugin.STTPlugin):
         ) as f:
             self._logfile = f.name
             self._logger.info('Pocketsphinx log file: {}'.format(self._logfile))
+
         # Pocketsphinx v5
-        config = pocketsphinx.Decoder.default_config()
-        config.set_string('-hmm', hmm_dir)
-        config.set_string('-kws', thresholds_path)
-        config.set_string('-lm', lm_path)
-        config.set_string('-dict', dict_path)
-        config.set_string('-logfn', self._logfile)
-        self._ps = pocketsphinx.Decoder(config)
+        self._config = pocketsphinx.Config(
+            hmm=hmm_dir,
+            kws=thresholds_path,
+            dict=dict_path
+        )
+        self._ps = pocketsphinx.Decoder(self._config)
 
     # Your plugin will probably rely on some profile settings:
     def settings(self):
@@ -193,51 +237,7 @@ class PocketsphinxKWSPlugin(plugin.STTPlugin):
                 if os.path.isdir(path):
                     hmm_dir = path
         # fst_model
-        fst_model = profile.get_profile_var(["pocketsphinx", "fst_model"])
-        if not fst_model:
-            # Make a list of possible paths to check
-            fst_model_paths = [
-                os.path.join(
-                    paths.sub(
-                        os.path.join(
-                            "pocketsphinx",
-                            "adapt",
-                            "en-US",
-                            "train",
-                            "model.fst"
-                        )
-                    )
-                ),
-                os.path.join(
-                    os.path.expanduser("~"),
-                    "pocketsphinx-python",
-                    "pocketsphinx",
-                    "model",
-                    "en-us",
-                    "train",
-                    "model.fst"
-                ),
-                os.path.join(
-                    os.path.expanduser("~"),
-                    "cmudict",
-                    "train",
-                    "model.fst"
-                ),
-                os.path.join(
-                    os.path.expanduser("~"),
-                    "CMUDict",
-                    "train",
-                    "model.fst"
-                ),
-                os.path.join(
-                    os.path.expanduser("~"),
-                    "phonetisaurus",
-                    "g014b2b.fst"
-                )
-            ]
-            for path in fst_model_paths:
-                if os.path.isfile(path):
-                    fst_model = path
+        fst_model = os.path.join(hmm_dir, 'g2p_model.fst')
         # If either the hmm dir or fst model is missing, then
         # download the standard model
         if not(hmm_dir and os.path.isdir(hmm_dir) and fst_model and os.path.isfile(fst_model)):
@@ -255,11 +255,6 @@ class PocketsphinxKWSPlugin(plugin.STTPlugin):
             if not os.path.isdir(standard_dir):
                 os.mkdir(standard_dir)
             hmm_dir = standard_dir
-            fst_model = os.path.join(hmm_dir, "train", "model.fst")
-            formatteddict_path = os.path.join(
-                hmm_dir,
-                "cmudict.formatted.dict"
-            )
             if(not sphinxbase.check_pocketsphinx_model(hmm_dir)):
                 # Check and see if we already have a copy of the standard
                 # language model
@@ -274,40 +269,16 @@ class PocketsphinxKWSPlugin(plugin.STTPlugin):
                 ]
                 completedprocess = run_command.run_command(cmd)
                 self._logger.info(run_command.process_completedprocess(completedprocess))
-            if(not os.path.isfile(formatteddict_path)):
-                print("Formatting the g2p dictionary")
-                with open(os.path.join(standard_dir, "cmudict.dict"), "r") as in_file:
-                    with open(formatteddict_path, "w+") as out_file:
-                        for line in in_file:
-                            # Remove whitespace at beginning and end
-                            line = line.strip()
-                            # remove the number in parentheses (if there is one)
-                            line = re.sub('([^\\(]+)\\(\\d+\\)', '\\1', line)
-                            # compress all multiple whitespaces into a single whitespace
-                            line = re.sub('\s+', ' ', line)
-                            # replace the first whitespace with a tab
-                            line = line.replace(' ', '\t', 1)
-                            print(line, file=out_file)
-            if(not os.path.isfile(fst_model)):
+                if completedprocess.returncode != 0:
+                    raise Exception("Error downloading standard language model")
+            if (not os.path.isfile(fst_model)):
                 # Use phonetisaurus to prepare an fst model
                 print("Training an FST model")
-                cmd = [
-                    "phonetisaurus-train",
-                    "--lexicon", formatteddict_path,
-                    "--seq2_del",
-                    "--dir_prefix", os.path.join(hmm_dir, "train")
-                ]
-                completedprocess = run_command.run_command(cmd)
-                self._logger.info(run_command.process_completedprocess(completedprocess))
+                PhonetisaurusG2P.train_fst(
+                    cmudict_path,
+                    fst_model
+                )
 
-        phonetisaurus_executable = profile.get_profile_var(
-            ['pocketsphinx', 'phonetisaurus_executable']
-        )
-        if(not phonetisaurus_executable):
-            if(check_program_exists('phonetisaurus-g2pfst')):
-                phonetisaurus_executable = 'phonetisaurus-g2pfst'
-            else:
-                phonetisaurus_executable = 'phonetisaurus-g2p'
         _ = self.gettext
         return OrderedDict(
             [
@@ -318,24 +289,6 @@ class PocketsphinxKWSPlugin(plugin.STTPlugin):
                             _('PocketSphinx hidden markov model directory')
                         ]),
                         'default': hmm_dir
-                    }
-                ),
-                (
-                    ('pocketsphinx', 'fst_model'), {
-                        'title': _('PocketSphinx FST file'),
-                        'description': "".join([
-                            _('PocketSphinx finite state transducer file')
-                        ]),
-                        'default': fst_model
-                    }
-                ),
-                (
-                    ('pocketsphinx', 'phonetisaurus_executable'), {
-                        'title': _('Phonetisaurus executable'),
-                        'description': "".join([
-                            _('Phonetisaurus is used to build custom dictionaries')
-                        ]),
-                        'default': phonetisaurus_executable
                     }
                 )
             ]
@@ -358,7 +311,10 @@ class PocketsphinxKWSPlugin(plugin.STTPlugin):
         self._ps.process_raw(audio_data, False, True)
         self._ps.end_utt()
         for s in self._ps.seg():
-            if(s.word in self._vocabulary_phrases):
-                transcribed.append(s.word)
-                break
+            # For some reason, the word comes back from the keyword spotter
+            # with whitespace at the end. I guess from the kws.thresholds
+            # file? So strip the word before comparing
+            word = s.word.strip()
+            if(word in self._vocabulary_phrases):
+                transcribed.append(word)
         return transcribed
