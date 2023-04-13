@@ -83,30 +83,27 @@ def compile_vocabulary(directory, phrases):
     # by appending a space char to the string.
     text += ' '
     logger.debug('Compiling languagemodel...')
-    vocabulary = compile_languagemodel(text, languagemodel_path)
+    vocabulary = compile_vocabulary(text)
     logger.debug('Starting dictionary...')
     compile_dictionary(g2pconverter, vocabulary, dictionary_path)
 
 
-def compile_languagemodel(text, output_file):
+def compile_vocabulary(text):
     """
-    Compiles the languagemodel from a text.
+    Returns a set of words from the text (keyword search mode does
+    not require a language model, this is the first step in
+    preparing a dictionary)
 
     Arguments:
         text -- the text the languagemodel will be generated from
-        output_file -- the path of the file this languagemodel will
-                       be written to
 
     Returns:
         A list of all unique words this vocabulary contains.
     """
     if len(text.strip()) == 0:
-        raise ValueError('No text to compile into languagemodel!')
+        raise ValueError('No text to compile into vocabulary!')
 
     logger = logging.getLogger(__name__)
-
-    with tempfile.NamedTemporaryFile(suffix='.vocab', delete=False) as f:
-        vocab_file = f.name
 
     # Get words from text
     logger.debug("Getting words from text...")
@@ -117,7 +114,7 @@ def compile_languagemodel(text, output_file):
             words.add(word)
 
     if len(words) == 0:
-        logger.warning('Vocab file seems to be empty!')
+        logger.warning('Vocabulary seems to be empty!')
 
     return words
 
@@ -163,7 +160,8 @@ def compile_dictionary(g2pconverter, corpus, output_file):
             corpus_lexicon[word] = lexicon[word]
         else:
             corpus_lexicon[word] = []
-            for w, p in g2pconverter.translate(word):
+            for w, p in g2pconverter.translate([word]):
+                print(f"{w} - {p}")
                 corpus_lexicon[word].append(p)
     with open(output_file, "w") as f:
         for word in sorted(corpus_lexicon):

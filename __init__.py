@@ -134,11 +134,11 @@ class PocketsphinxKWSPlugin(plugin.STTPlugin):
         print(msg)
         with open(thresholds_path, 'w') as f:
             for keyword in keywords:
-                threshold = profile.get(['Pocketsphinx_KWS', 'thresholds', keyword], 1)
+                threshold = profile.get(['Pocketsphinx_KWS', 'thresholds', keyword], -30)
                 if(threshold < 0):
                     f.write("{}\t/1e{}/\n".format(keyword, threshold))
                 else:
-                    f.write("{}\t/1e-{}/\n".format(keyword, threshold))
+                    f.write("{}\t/1e+{}/\n".format(keyword, threshold))
         hmm_dir = profile.get(['pocketsphinx', 'hmm_dir'])
         # Perform some checks on the hmm_dir so that we can display more
         # meaningful error messages if neccessary
@@ -294,6 +294,13 @@ class PocketsphinxKWSPlugin(plugin.STTPlugin):
             ]
         )
 
+    def reinit(self):
+        self._logger.debug(
+            "Re-initializing PocketSphinx Decoder {self._vocabulary_name}"
+        )
+        # Pocketsphinx v5
+        self._ps.reinit(self._config)
+
     # The only method you really have to override to instantiate a
     # STT plugin is the transcribe() method, which recieves a pointer
     # to the file containing the audio to be transcribed:
@@ -307,14 +314,21 @@ class PocketsphinxKWSPlugin(plugin.STTPlugin):
         transcribed = []
         fp.seek(44)
         audio_data = fp.read()
-        self._ps.start_utt()
-        self._ps.process_raw(audio_data, False, True)
-        self._ps.end_utt()
-        for s in self._ps.seg():
-            # For some reason, the word comes back from the keyword spotter
-            # with whitespace at the end. I guess from the kws.thresholds
-            # file? So strip the word before comparing
-            word = s.word.strip()
-            if(word in self._vocabulary_phrases):
-                transcribed.append(word)
+        while True:
+            try:
+                self._ps.start_utt()
+                self._ps.process_raw(audio_data, False, True)
+                self._ps.end_utt()
+                segs = self._ps.seg()
+                if segs:
+                    for s in self._ps.seg():
+                        # For some reason, the word comes back from the keyword spotter
+                        # with whitespace at the end. I guess from the kws.thresholds
+                        # file? So strip the word before comparing
+                        word = s.word.strip()
+                        if(word in self._vocabulary_phrases):
+                            transcribed.append(word)
+                break
+            except RuntimeError as e:
+                self.reinit()
         return transcribed
