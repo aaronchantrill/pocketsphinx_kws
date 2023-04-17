@@ -83,12 +83,12 @@ def compile_vocabulary(directory, phrases):
     # by appending a space char to the string.
     text += ' '
     logger.debug('Compiling languagemodel...')
-    vocabulary = compile_vocabulary(text)
+    vocabulary = compile_lexicon(text)
     logger.debug('Starting dictionary...')
     compile_dictionary(g2pconverter, vocabulary, dictionary_path)
 
 
-def compile_vocabulary(text):
+def compile_lexicon(text):
     """
     Returns a set of words from the text (keyword search mode does
     not require a language model, this is the first step in
