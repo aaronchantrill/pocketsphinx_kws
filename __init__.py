@@ -57,17 +57,7 @@ except ModuleNotFoundError as e:
                     raise Exception("Phonetisaurus install failed")
             else:
                 raise Exception("Phonetisaurus install failed")
-try:
-    try:
-        from pocketsphinx import pocketsphinx
-    except ValueError:
-        # Fixes a quirky bug when first import doesn't work.
-        # See http://sourceforge.net/p/cmusphinx/bugs/284/ for details.
-        from pocketsphinx import pocketsphinx
-    pocketsphinx_available = True
-except ImportError:
-    pocketsphinx = None
-    pocketsphinx_available = False
+from pocketsphinx import pocketsphinx
 
 
 # AaronC - This searches some standard places (/bin, /usr/bin, /usr/local/bin)
@@ -82,6 +72,23 @@ def check_program_exists(program):
         if(os.path.isfile(os.path.join(location, program))):
             response = True
     return response
+
+
+def check_pocketsphinx_model(directory):
+    # Start by assuming the files exist. If any file is found to not
+    # exist, then set this to False
+    FilesExist = True
+    if (not os.path.isfile(os.path.join(directory, "mdef"))):
+        FilesExist = False
+    if (not os.path.isfile(os.path.join(directory, "means"))):
+        FilesExist = False
+    if (not os.path.isfile(os.path.join(directory, "mixture_weights"))):
+        FilesExist = False
+    if (not os.path.isfile(os.path.join(directory, "sendump"))):
+        FilesExist = False
+    if (not os.path.isfile(os.path.join(directory, "variances"))):
+        FilesExist = False
+    return FilesExist
 
 
 # The STT plugin converts an audio clip into a text transcription.
@@ -255,7 +262,7 @@ class PocketsphinxKWSPlugin(plugin.STTPlugin):
             if not os.path.isdir(standard_dir):
                 os.mkdir(standard_dir)
             hmm_dir = standard_dir
-            if(not sphinxbase.check_pocketsphinx_model(hmm_dir)):
+            if(not check_pocketsphinx_model(hmm_dir)):
                 # Check and see if we already have a copy of the standard
                 # language model
                 print("Downloading and installing the {} pocketsphinx language model".format(language))
@@ -271,6 +278,10 @@ class PocketsphinxKWSPlugin(plugin.STTPlugin):
                 self._logger.info(run_command.process_completedprocess(completedprocess))
                 if completedprocess.returncode != 0:
                     raise Exception("Error downloading standard language model")
+            cmudict_path = os.path.join(
+                hmm_dir,
+                "cmudict.dict"
+            )
             if (not os.path.isfile(fst_model)):
                 # Use phonetisaurus to prepare an fst model
                 print("Training an FST model")

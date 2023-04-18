@@ -32,8 +32,8 @@ passive_stt:
   engine: Pocketsphinx_KWS
 Pocketsphinx_KWS:
     thresholds:
-        NAOMI: 80
-        MAGICVOICE: 75
+        NAOMI: 10
+        MAGICVOICE: 40
 ```
 
 When you use this plugin, it will automatically create a vocabulary
@@ -41,8 +41,8 @@ including a thresholds file called kws.thresholds. The thresholds file has a
 format like:
 
 ```
-NAOMI   /1e+80/
-MAGICVOICE  /1e+75/
+NAOMI   /1e+10/
+MAGICVOICE  /1e+40/
 ```
 
 If you have defined thresholds in your profile, they will be used when
